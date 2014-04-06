@@ -14,9 +14,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Vibrator;
 import android.preference.PreferenceManager;
+import android.speech.tts.TextToSpeech;
 import android.support.v4.app.ActionBarDrawerToggle;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarActivity;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -25,6 +27,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
@@ -46,13 +49,19 @@ import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.example.drinkalarm.R.layout.drawer_list_item;
+import static com.example.drinkalarm.R.layout.drawer_list_item;import java.util.Locale;
 
-public class JeuActivite extends ActionBarActivity {
+
+public class JeuActivite extends ActionBarActivity implements
+        TextToSpeech.OnInitListener{
 
     //CONSTANTES ACTIONS
     private final int AJOUT = 1;
     private final int MODIFICATION = 0;
+    private TextToSpeech tts;
+
+    private int tts_status;
+    private boolean tts_enable;
 
     /**
      * Groupe de level
@@ -141,6 +150,10 @@ public class JeuActivite extends ActionBarActivity {
 
     @Override
     protected void onDestroy() {
+        if (tts != null) {
+            tts.stop();
+            tts.shutdown();
+        }
         super.onDestroy();
         //On arrête le chrono
         isRunning.set(false);
@@ -161,6 +174,11 @@ public class JeuActivite extends ActionBarActivity {
 
     }
 
+    @Override
+    protected void onStart(){
+        super.onStart();
+        tts_enable = preferences.getBoolean("beta_tts",true);
+    }
     /**
      * Called when the activity is first created.
      */
@@ -169,6 +187,7 @@ public class JeuActivite extends ActionBarActivity {
     public void onCreate(Bundle savedInstanceState) {
 
         getResources().getIdentifier("horn_turn","strings",getPackageName());
+        tts = new TextToSpeech(this, this);
 
         //Instanciation du lecteur audio
         mp = new MediaPlayer();
@@ -189,12 +208,15 @@ public class JeuActivite extends ActionBarActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        tts_enable = preferences.getBoolean("beta_tts",true);
+
         //Ajouter la possibilité de modifier les préférences
         editor = preferences.edit();
 
         // Controller init
         controller = new JeuControlleur("medium", getResources().getStringArray(R.array.name) ,getResources().openRawResource(R.raw.actions));
         controller.addJoueur(preferences.getString(SettingsActivity.NOM_DEFAUT, getString(R.string.nom_defaut)));
+
 
         /**
          * Gestion level
@@ -246,6 +268,10 @@ public class JeuActivite extends ActionBarActivity {
                                                 vib.vibrate(pattern_vib,- 1);
                                                 //Message
                                                 Toast.makeText(getApplicationContext(), "Bon courage...", Toast.LENGTH_LONG).show();
+                                                if(tts_status == TextToSpeech.SUCCESS && tts_enable){
+                                                    tts.speak("Bon courage !", TextToSpeech.QUEUE_FLUSH, null);
+                                                }
+
                                             }
                                         })
                                         .setNegativeButton("Non", new DialogInterface.OnClickListener(){
@@ -444,7 +470,7 @@ public class JeuActivite extends ActionBarActivity {
                     //Apparition d'une Action
                     layoutAction.setBackgroundColor(Color.rgb(34,34,34));
                     final String affTitre = getString(action.getTitreAction()) + "  -  (" + dteFormatee + ")";
-                    String affDesc = action.play(controller.getJoueurs(),getString(action.getDescAction()));
+                    final String affDesc = action.play(controller.getJoueurs(),getString(action.getDescAction()));
                     titreAction.setText(affTitre);
                     descAction.setText(affDesc);
                     imgAction.setImageResource(R.drawable.marteau_tour_appel);
@@ -462,8 +488,18 @@ public class JeuActivite extends ActionBarActivity {
                     }
                     logsLv.setAdapter(adaptLogs);
                     //Chargement d'une chanson
-                    mp = MediaPlayer.create(getApplicationContext(), getResources().getIdentifier(action.getCheminSon(),"strings",getPackageName()));
+                    mp = MediaPlayer.create(getApplicationContext(), getResources().getIdentifier(action.getCheminSon(),"raw",getPackageName()));
                     mp.start();
+                    mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener(){
+
+                        @Override
+                        public void onCompletion(MediaPlayer mediaPlayer) {
+                            if(tts_status == TextToSpeech.SUCCESS && tts_enable){
+                                tts.speak(getString(action.getTitreAction()), TextToSpeech.QUEUE_FLUSH, null);
+                                tts.speak(affDesc, TextToSpeech.QUEUE_ADD, null);
+                            }
+                        }
+                    });
                     //Mise en place d'un écouteur sur l'image (pour faire appel)
                     imgAction.setOnClickListener(new View.OnClickListener() {
                         @Override
@@ -503,6 +539,8 @@ public class JeuActivite extends ActionBarActivity {
         handler.postDelayed(run, 1000);
     }
 
+
+
     //Méthode qui détermine le nombre de secondes affichées sur le chronomètre
     public int getSecondes() {
         String secondes = chrono.getText().toString();
@@ -512,6 +550,25 @@ public class JeuActivite extends ActionBarActivity {
         else
             secondes = secondes.substring(secondes.length() - 1, secondes.length());
         return Integer.parseInt(secondes);
+    }
+
+    @Override
+    public void onInit(int status) {
+        tts_status = TextToSpeech.ERROR;
+        if (status == TextToSpeech.SUCCESS) {
+
+            int result = tts.setLanguage(Locale.FRANCE);
+
+            if (result == TextToSpeech.LANG_MISSING_DATA
+                    || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e("TTS", "This Language is not supported");
+            } else {
+                tts_status = status;
+            }
+
+        } else {
+            Log.e("TTS", "Initilization Failed!");
+        }
     }
 
     private class DrawerItemClickListener implements

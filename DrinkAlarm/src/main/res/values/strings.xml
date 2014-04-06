@@ -19,4 +19,5 @@
     <string name="empty_nom_mess">La chaîne saisie est vide !</string>
     <string name="err_default">Une erreur c\'est produite.</string>
     <string name="err_length_mess">Le nom doit etre compris entre 3 et 15 caractères : </string>
+    <string name="beta_tts">Lecture des notifications (beta)</string>
 </resources>
